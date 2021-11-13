@@ -7,3 +7,5 @@
 * **Comenten el código**, escriban los **docstrings** de cada función, y si usan algún procedimiento **raro o algo que no estén seguros** de cómo funciona (incluida las respuestas de **Stackoverflow**) lo comentan también. En fin, dejen documentación.
 
 
+## Links de dependencias:
+* [Simple JSON](http://www.java2s.com/Code/JarDownload/json-simple/json-simple-1.1.jar.zip)

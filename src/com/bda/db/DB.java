@@ -8,9 +8,12 @@ public class DB {
 
     private static DB instance;
 
-    public static DB getInstance(String host, int port, String database, String user, String password) {
+    private static Boolean createdDatabase = false;
+
+    
+    public static DB getInstance(ConnectionData data) {
         if (DB.instance == null)
-            DB.instance = new DB(host, port, database, user, password);
+            new DB(data, false);
         return DB.instance;
     }
 
@@ -18,6 +21,9 @@ public class DB {
         return DB.instance;
     }
 
+    public static Boolean didCreateDatabase() {
+        return DB.createdDatabase;
+    }
     // endregion
 
     // region propiedades, getters y setters
@@ -37,31 +43,73 @@ public class DB {
 
     // region constructor
 
-    public DB(String host, int port, String database, String user, String password) {
+    public DB(ConnectionData data, Boolean createDatabase) {
+        // Necesita crear la DB
+        if (createDatabase) {
+            // Forma el url
+            String url = "jdbc:mysql://%s:%d?user=%s";
+            url = String.format(url, data.getHost(), data.getPort(), data.getUser());
 
-        String url = new String();
+            // Agrega la contraseña si se agrego
+            if (data.getPassword() != null && !data.getPassword().isEmpty())
+                url += String.format("&password=%s", data.getPassword());
 
-        try {
-            url = String.format(
-                    "jdbc:mysql://%s:%d/%s?user=%s",
-                    host,
-                    port,
-                    database,
-                    user
-            );
+            // Se intenta conectar con Servidor y crear BD
+            try {
+                // Abre la conexion
+                this.connection = DriverManager.getConnection(url);
 
-            if (password != null && !password.isEmpty())
-                url += String.format("&password=%s", password);
+                // Crea la base de datos
+                Statement statement = this.connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE,
+                        ResultSet.CONCUR_UPDATABLE);
+                statement.executeUpdate(String.format("CREATE DATABASE %s", data.getDatabase()));
+                System.out.println(String.format("Se ha creado correctamente la DB %s", data.getDatabase()));
 
-            this.connection = DriverManager.getConnection(url);
-        } catch (SQLException e) {
-            e.printStackTrace();
-            System.exit(0);
-        } finally {
+                // Cerramos la conexion
+                this.connection.close();
+
+            } catch (SQLException e) {
+                System.out.println("No se pudo conectar con la BD, recuperación fallida!!!");
+                e.printStackTrace();
+                System.exit(-1);
+            }
+
+            // Volvemos a instanciar pero esta vez con una base de datos creada
+            DB.createdDatabase = true;
+            new DB(data, false);
+            return;
+        }
+        // Conectar con BD
+        else {
+            // Forma el url
+            String url = "jdbc:mysql://%s:%d/%s?user=%s";
+            url = String.format(url, data.getHost(), data.getPort(), data.getDatabase(), data.getUser());
+
+            // Agrega la contraseña si se agrego
+            if (data.getPassword() != null && !data.getPassword().isEmpty())
+                url += String.format("&password=%s", data.getPassword());
+
+            // Se intenta conectar con Servidor y BD
+            try {
+                // Abre la conexion
+                this.connection = DriverManager.getConnection(url);
+            } catch (SQLException e) {
+                String message = String.format(
+                    "No existe la BD %s, creando DB %s!!!", 
+                    data.getDatabase(),
+                    data.getDatabase()
+                );
+                System.out.println(message);
+                new DB(data, true);
+                return;
+            }
+
+            // Abre la conexion
             this.url = url;
 
-            if (DB.instance != null)
+            if (DB.instance == null)
                 DB.instance = this;
+            System.out.println("Conexión exitosa a la BD");
         }
     }
 
@@ -71,18 +119,16 @@ public class DB {
 
     /**
      * <p>
-     * Pasar a isUpdateable como true si quieres ser capaz de hacerle update a los datos.
+     * Pasar a isUpdateable como true si quieres ser capaz de hacerle update a los
+     * datos.
      * </p>
      * <p>
      * Para hacerle update a los datos vas a tener:
-     *     <ol>
-     *         <li>
-     *            Usar un método update[el tipo de dato según la API de JDBC] a cada fila del ResultSet obtenido.
-     *         </li>
-     *         <li>
-     *             Luego usar el método updateRow a cada fila del ResultSet obtenido.
-     *         </li>
-     *     </ol>
+     * <ol>
+     * <li>Usar un método update[el tipo de dato según la API de JDBC] a cada fila
+     * del ResultSet obtenido.</li>
+     * <li>Luego usar el método updateRow a cada fila del ResultSet obtenido.</li>
+     * </ol>
      * </p>
      *
      * @param query        String
@@ -94,40 +140,44 @@ public class DB {
         ResultSet resultSet = null;
 
         try {
-            if (DB.getInstance() == null) throw new SQLException();
+            Statement statement = isUpdateable
+                    ? DB.getInstance().connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE,
+                            ResultSet.CONCUR_UPDATABLE)
+                    : DB.getInstance().connection.createStatement();
 
-            Statement statement = isUpdateable ?
-                    DB.getInstance().connection.createStatement(
-                            ResultSet.TYPE_SCROLL_SENSITIVE,
-                            ResultSet.CONCUR_UPDATABLE
-                    ) :
-                    DB.getInstance().connection.createStatement();
+            if (isUpdateable)
+                statement.executeUpdate(query);
+            else
+                resultSet = statement.executeQuery(query);
 
-            resultSet = statement.executeQuery(query);
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            return resultSet;
         }
+
+        return resultSet;
+
     }
 
     /**
      * <p>
-     * Este método permite ejecutar instrucciones por lotes, de manera que puede poner cualquier cantidad de instrucciones
-     * aquí y se van a ejecutar una detrás de otra.
+     * Este método permite ejecutar instrucciones por lotes, de manera que puede
+     * poner cualquier cantidad de instrucciones aquí y se van a ejecutar una detrás
+     * de otra.
      * </p>
      * <br/>
-     * <h3>Este método no devuelve valores por lo que no se recomienda usar instrucciones que devuelvan resultados</h3>
+     * <h3>Este método no devuelve valores por lo que no se recomienda usar
+     * instrucciones que devuelvan resultados</h3>
      *
      * @param queries String[]
      */
     public static void ExecuteQueryBATCHING(String[] queries) {
         /**
-         *  TODO: se le podría agregar algo para que recibiera lotes para metrizados
-         *      (https://docs.oracle.com/javase/tutorial/jdbc/basics/retrieving.html)
+         * TODO: se le podría agregar algo para que recibiera lotes parametrizados
+         * (https://docs.oracle.com/javase/tutorial/jdbc/basics/retrieving.html)
          */
         try {
-            if (DB.getInstance() == null) throw new SQLException();
+            if (DB.getInstance() == null)
+                throw new SQLException();
 
             Connection connection = DB.getInstance().getConnection();
             connection.setAutoCommit(false); // Siempre quitar el autocommit antes de ejecutar un lote
@@ -136,12 +186,14 @@ public class DB {
             for (String query : queries)
                 statement.addBatch(query);
 
-            // TODO: Podría agregarle una banderas para saber qué pasó en la ejecución del lote de queries
-            int[] updateCounts = statement.executeBatch();
+            // TODO: Podría agregarle una banderas para saber qué pasó en la ejecución del
+            // lote de queries
+            // int[] updateCounts = statement.executeBatch();
             connection.commit();
             connection.setAutoCommit(true);
         } catch (BatchUpdateException batchUpdateExcp) {
-            // TODO: Se podría mejorar el mensaje para tener más info cuando falle, pero es para otro día
+            // TODO: Se podría mejorar el mensaje para tener más info cuando falle, pero es
+            // para otro día
             System.err.println(batchUpdateExcp.getMessage());
         } catch (SQLException sqlExcp) {
             System.err.println(sqlExcp.getMessage());
@@ -149,9 +201,13 @@ public class DB {
     }
 
     /**
-     * <p>Este método ejecuta una instrucción Delete, Insert o Update.</p>
+     * <p>
+     * Este método ejecuta una instrucción Delete, Insert o Update.
+     * </p>
      * <br/>
-     * <p>Devuelve la cantidad de filas afectadas</p>
+     * <p>
+     * Devuelve la cantidad de filas afectadas
+     * </p>
      *
      * @param query String
      * @return int
@@ -161,7 +217,8 @@ public class DB {
         int affectedRows = 0;
 
         try {
-            if (DB.getInstance() == null) throw new SQLException();
+            if (DB.getInstance() == null)
+                throw new SQLException();
 
             Statement statement = DB.getInstance().connection.createStatement();
             affectedRows = statement.executeUpdate(query);
@@ -171,15 +228,17 @@ public class DB {
         return affectedRows;
     }
 
-    public static void CloseConnection(){
-        if(DB.getInstance().connection == null) return;
+    public static void CloseConnection() {
+        if (DB.getInstance().connection == null)
+            return;
         try {
             DB.getInstance().connection.close();
             DB.instance = null;
-        }
-        catch (SQLException e){
+        } catch (SQLException e) {
             e.printStackTrace();
         }
+        DB.instance = null;
+        System.out.println("La conexión a la BD se ha cerrado");
     }
 
     // endregion

@@ -1,1 +1,1 @@
-{"session":{"username":null,"email":null,"user_token":null},"Database Connection":{}}
+{"session":{"username":"","email":"","user_token":""},"Database Connection":{"host":"127.0.0.1","port":3306,"database":"QA_MARATON","user":"root","password":""}}
