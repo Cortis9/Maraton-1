@@ -10,7 +10,6 @@ public class DB {
 
     private static Boolean createdDatabase = false;
 
-    
     public static DB getInstance(ConnectionData data) {
         if (DB.instance == null)
             new DB(data, false);
